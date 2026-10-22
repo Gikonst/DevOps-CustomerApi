@@ -1,0 +1,46 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+launchSettings.json.user
+# Rider / VS Code
+.idea/
+.vscode/
+
+# Test results & coverage
+TestResults/
+[Tt]est[Rr]esult*/
+coverage/
+*.coverage
+*.coveragexml
+*.trx
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+# Secrets / local config
+appsettings.*.local.json
+secrets.json
+.env
+*.pfx
+
+# Docker local data
+.docker/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Copilot / session artifacts
+session-state/
