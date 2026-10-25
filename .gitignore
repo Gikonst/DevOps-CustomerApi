@@ -47,3 +47,6 @@ session-state/
 
 # SQL
 *.sql
+
+# Secrets
+secrets.yaml
