@@ -36,4 +36,20 @@ livenessProbe:
   periodSeconds: 10
 
 config:
-  aspnetcoreEnvironment: Development
+  aspnetcoreEnvironment: Production
+
+database:
+  host: postgres
+  port: 5432
+  name: customerdb
+  existingSecret: customer-api-db
+  usernameKey: POSTGRES_USER
+  passwordKey: POSTGRES_PASSWORD
+
+postgresql:
+  fullnameOverride: postgres
+  auth:
+    database: customerdb
+    existingSecret: customer-api-db
+    secretKeys:
+      adminPasswordKey: POSTGRES_PASSWORD

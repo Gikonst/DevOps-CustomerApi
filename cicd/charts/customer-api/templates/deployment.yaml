@@ -30,6 +30,18 @@ spec:
                 configMapKeyRef:
                   name: {{ include "customer-api.fullname" . }}
                   key: ASPNETCORE_ENVIRONMENT
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.usernameKey }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.passwordKey }}
+            - name: ConnectionStrings__Customers
+              value: "Host={{ .Values.database.host }};Port={{ .Values.database.port }};Database={{ .Values.database.name }};Username=$(DB_USERNAME);Password=$(DB_PASSWORD)"
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
