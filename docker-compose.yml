@@ -25,7 +25,7 @@ services:
     container_name: customerapi
     restart: unless-stopped
     environment:
-      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Customers: "Host=postgres;Port=5432;Database=customerdb;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
     ports:
       - "8080:8080"

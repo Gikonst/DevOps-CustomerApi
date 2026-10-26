@@ -2,6 +2,32 @@
 
 What was added in each phase of the roadmap (see [README.md](README.md)). Newest first.
 
+## Phase 3 — Helm chart
+
+### Added
+- `cicd/charts/customer-api`: Helm chart with a Deployment, a Service (ClusterIP, port 80 to container port 8080) and a ConfigMap (`ASPNETCORE_ENVIRONMENT`).
+- Readiness probe on `/health` and liveness probe on `/health/live`. Readiness checks the database, liveness does not, so a database outage does not restart healthy API pods.
+- `values.yaml` holds the replica count, image repository and tag, resources, probes, environment and database settings.
+- Bitnami `postgresql` 18.12.16 as a pinned dependency (`Chart.lock`), with the Service named `postgres` and the `customerdb` database created on first start.
+- Credentials come from a Secret created outside the chart (`database.existingSecret`). The API and the PostgreSQL chart both read it, and the connection string is assembled in the pod from the secret keys, so the password never appears in `values.yaml` or the rendered manifests.
+
+### Notes
+- The chart assumes `POSTGRES_USER=postgres`, the admin user created by the Bitnami chart.
+- The Bitnami image is pulled with the `latest` tag, so it is not pinned.
+- Migrations are not part of the chart yet. The API pods stay `0/1` until the schema is applied by hand.
+
+## Phase 4 — Local Kubernetes cluster
+
+### Added
+- minikube as the local cluster, documented in the README ("Run on Kubernetes").
+- `scripts/build-image.ps1`: builds `customer-api:<tag>` and loads it into minikube.
+- `cicd/kubernetes/`: plain manifests (Deployment, Service, ConfigMap, PostgreSQL StatefulSet with a headless Service and a volume claim) written before the chart to learn the resources. A Secret manifest is used locally and git-ignored. They are kept as a reference and are not used by the chart.
+
+### Notes
+- Images built locally must be loaded into minikube, and the Deployment uses `imagePullPolicy: IfNotPresent` so the local copy is used.
+- Rebuilding under the same tag does not restart pods, so use a new tag or `kubectl rollout restart`.
+- Verified: the API is `1/1` after the migrations run, and deleting the PostgreSQL pod or StatefulSet keeps the data in its volume claim.
+
 ## Phase 2 — Dockerize the app
 
 ### Added
