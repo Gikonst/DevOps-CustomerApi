@@ -147,48 +147,6 @@ Notes:
 | GET | `/health/live` | Liveness: the process is up (no dependency checks) |
 | GET | `/openapi/v1.json` | OpenAPI document (Development only) |
 
-### Configuration
-
-| Variable | Used by | Purpose |
-|----------|---------|---------|
-| `POSTGRES_USER` | postgres, api | Database user |
-| `POSTGRES_PASSWORD` | postgres, api | Database password |
-| `ConnectionStrings__Customers` | api | Connection string. Built in `docker-compose.yml` for the container (host `postgres`), or set via user secrets locally |
-| `ASPNETCORE_ENVIRONMENT` | api | Swagger/OpenAPI are enabled only in `Development` |
-
-### Helm values
-
-Defaults are in [cicd/charts/customer-api/values.yaml](cicd/charts/customer-api/values.yaml).
-
-| Value | Default | Purpose |
-|-------|---------|---------|
-| `replicaCount` | `2` | API pods (ignored while autoscaling is enabled) |
-| `image.repository` / `image.tag` | `customer-api` / `latest` | Image to run |
-| `resources` | 100m CPU / 128Mi requested, 256Mi memory limit | API container resources |
-| `config.aspnetcoreEnvironment` | `Production` | Stored in a ConfigMap and exposed as `ASPNETCORE_ENVIRONMENT` |
-| `database.existingSecret` | `customer-api-db` | Pre-created Secret with the DB user and password |
-| `database.host` / `port` / `name` | `postgres` / `5432` / `customerdb` | Used to build `ConnectionStrings__Customers` |
-| `postgresql.*` | see file | Settings for the Bitnami PostgreSQL dependency |
-| `autoscaling.*` | enabled, 2 to 6 pods, 50% CPU | Horizontal Pod Autoscaler |
-
-The probes use `/health` (readiness) and `/health/live` (liveness).
-
-### Project layout
-```
-src/
-  CustomerApi/                 API host: endpoints, health checks, error handling
-  CustomerApi.Application/     Services, DTOs, mappers, repository interfaces
-  CustomerApi.Domain/          Entities
-  CustomerApi.Infrastructure/  EF Core DbContext, repositories, migrations
-tests/                         Unit and integration tests
-cicd/Dockerfile                Multi-stage image build
-cicd/charts/customer-api/      Helm chart (API + Bitnami PostgreSQL dependency)
-cicd/kubernetes/               Plain manifests written first as a learning step (reference only)
-cicd/tests/load/               k6 load test used to trigger the autoscaler
-db/init.sql                    Schema script generated from the EF migrations
-scripts/                       EF migration helpers and the image build script
-```
-
 ### Database schema in Docker
 `db/init.sql` runs only when the Postgres volume is empty. After adding a migration, regenerate it and reset the volume:
 ```bash
