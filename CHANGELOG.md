@@ -2,7 +2,34 @@
 
 What was added in each phase of the roadmap (see [README.md](README.md)). Newest first.
 
-## Phase 3 — Helm chart
+## Phase 6 — Scale it
+
+### Added
+- metrics-server, installed from its Helm chart (`--kubelet-insecure-tls` for minikube), so `kubectl top` and the autoscaler get CPU data.
+- `templates/hpa.yaml` and `autoscaling` values: a CPU-based Horizontal Pod Autoscaler, 2 to 6 pods, target 50% of the CPU request. While it is enabled the Deployment omits `replicas`, so Helm does not fight the autoscaler.
+- `cicd/tests/load/customers.js`: k6 script (ramp to 50 users, thresholds on error rate and p95 latency) that runs inside the cluster.
+
+### Notes
+- Load must come from inside the cluster, because `kubectl port-forward` sends every request to one pod.
+- CPU is measured against the pod's request (100m), so values above 100% are normal under load.
+- Verified with `hey` (50 workers, 3 minutes): CPU rose from about 3% to about 300% of the target and the HPA scaled from 2 to 6 pods within about 30 seconds. New pods took about 30–40 seconds to pass readiness.
+- Scale-down waits for the default 5-minute stabilization window.
+- Manual scaling needs `--set autoscaling.enabled=false`, otherwise the HPA owns the replica count.
+- The load test only reads `/customers`.
+
+## Phase 5 — Deploy with Helm
+
+### Added
+- Release lifecycle practised with Helm: `helm install`, `helm upgrade --set image.tag=...` with a new image version (rolling update gated by the readiness probe), `helm history` and `helm rollback`.
+- Access through `kubectl port-forward` to the Service.
+
+### Notes
+- The release runs in the `default` namespace. A dedicated namespace and an Ingress are left for later.
+- Values from a previous `--set` were carried into the next upgrade in our runs. Pass `--reset-values` explicitly and check with `helm get values`.
+- A rollback restores the Kubernetes resources only. Database data and migrations stay as they are.
+- Removing a locally loaded image (`minikube image rm`) does not stop running pods, but new pods cannot start until it is loaded again.
+
+## Phase 4 — Helm chart
 
 ### Added
 - `cicd/charts/customer-api`: Helm chart with a Deployment, a Service (ClusterIP, port 80 to container port 8080) and a ConfigMap (`ASPNETCORE_ENVIRONMENT`).
@@ -16,12 +43,12 @@ What was added in each phase of the roadmap (see [README.md](README.md)). Newest
 - The Bitnami image is pulled with the `latest` tag, so it is not pinned.
 - Migrations are not part of the chart yet. The API pods stay `0/1` until the schema is applied by hand.
 
-## Phase 4 — Local Kubernetes cluster
+## Phase 3 — Local Kubernetes cluster
 
 ### Added
 - minikube as the local cluster, documented in the README ("Run on Kubernetes").
 - `scripts/build-image.ps1`: builds `customer-api:<tag>` and loads it into minikube.
-- `cicd/kubernetes/`: plain manifests (Deployment, Service, ConfigMap, PostgreSQL StatefulSet with a headless Service and a volume claim) written before the chart to learn the resources. A Secret manifest is used locally and git-ignored. They are kept as a reference and are not used by the chart.
+- `cicd/kubernetes/`: plain manifests (Deployment, Service, ConfigMap, PostgreSQL StatefulSet with a headless Service and a volume claim) written first, before the Helm chart, to learn the resources. A Secret manifest is used locally and git-ignored. They are kept as a reference and are not used by the chart.
 
 ### Notes
 - Images built locally must be loaded into minikube, and the Deployment uses `imagePullPolicy: IfNotPresent` so the local copy is used.
