@@ -53,3 +53,9 @@ postgresql:
     existingSecret: customer-api-db
     secretKeys:
       adminPasswordKey: POSTGRES_PASSWORD
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 50

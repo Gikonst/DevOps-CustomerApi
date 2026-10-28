@@ -6,17 +6,15 @@ What was added in each phase is listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 
-| # | Phase | Status |
-|---|-------|--------|
-| 1 | Build the .NET API (EF Core + PostgreSQL, OpenAPI, health checks) | Done |
-| 2 | Dockerize the app (multi-stage Dockerfile, docker-compose for API + DB) | Done |
-| 3 | Create a Helm chart (Deployment, Service, ConfigMap, Secret, probes, Bitnami PostgreSQL dependency) | Done |
-| 4 | Set up a local Kubernetes cluster (minikube) | Done |
-| 5 | Deploy with Helm (namespace, ingress/port-forward, upgrade & rollback) | In progress |
-| 6 | Scale it (manual scaling, metrics-server, HPA, load testing with k6/hey) | Planned |
-| 7 | Monitoring with Grafana (kube-prometheus-stack, app metrics, dashboards) | Planned |
-
-Next steps after that: a CI/CD pipeline with GitHub Actions and centralized logging with Loki.
+| # | Phase |
+|---|-------|
+| 1 | Build the .NET API (EF Core + PostgreSQL, OpenAPI, health checks) |
+| 2 | Dockerize the app (multi-stage Dockerfile, docker-compose for API + DB) |
+| 3 | Set up a local Kubernetes cluster (minikube) |
+| 4 | Create a Helm chart (Deployment, Service, ConfigMap, Secret, probes, Bitnami PostgreSQL dependency) |
+| 5 | Deploy with Helm (install, port-forward, upgrade & rollback) |
+| 6 | Scale it (manual scaling, metrics-server, HPA, load testing with k6/hey) |
+| 7 | Monitoring with Grafana (kube-prometheus-stack, app metrics, dashboards) |
 
 ## Prerequisites
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
@@ -86,9 +84,17 @@ kubectl port-forward svc/customer-api 8080:80
 curl http://localhost:8080/health
 ```
 
-**Update and clean up**
+**5. Upgrade and roll back**
 ```powershell
-helm upgrade customer-api ./cicd/charts/customer-api
+./scripts/build-image.ps1 -Tag 0.1.1                   # new image version
+helm upgrade customer-api ./cicd/charts/customer-api --reset-values --set image.tag=0.1.1
+helm history customer-api
+helm rollback customer-api <revision>
+```
+`--reset-values` uses the chart defaults plus only the values you pass, instead of reusing values from earlier revisions. Check what a release uses with `helm get values customer-api`. A rollback restores the Kubernetes resources only, not the database.
+
+**Clean up**
+```powershell
 helm uninstall customer-api
 ```
 `helm uninstall` keeps the `data-postgres-0` volume claim and the `customer-api-db` Secret. Delete them with `kubectl delete pvc data-postgres-0` and `kubectl delete secret customer-api-db` for a clean slate.
@@ -97,6 +103,34 @@ Notes:
 - Rebuilding the image under the same tag does not restart the pods. Run `kubectl rollout restart deployment/customer-api`, or use a new tag (`-Tag 0.1.1` and `image.tag`).
 - Every key in `.env` becomes a key in the Secret. The chart only reads `POSTGRES_USER` and `POSTGRES_PASSWORD`.
 - Migrations are not applied automatically on deploy yet.
+
+## Scale it
+
+**1. Metrics for the autoscaler**
+```powershell
+helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+helm upgrade --install metrics-server metrics-server/metrics-server -n kube-system --set "args={--kubelet-insecure-tls}"   # the flag is for minikube only
+kubectl top pods
+```
+
+**2. Manual scaling.** Turn the autoscaler off, otherwise it controls the replica count:
+```powershell
+helm upgrade customer-api ./cicd/charts/customer-api --reset-values --set autoscaling.enabled=false --set replicaCount=4
+kubectl get endpoints customer-api
+```
+
+**3. Autoscaling.** The chart creates a CPU-based HPA by default (2 to 6 pods, 50% of the CPU request):
+```powershell
+helm upgrade customer-api ./cicd/charts/customer-api --reset-values
+kubectl get hpa -w                                     # terminal 1
+kubectl get pods -w                                    # terminal 2
+Get-Content cicd/tests/load/customers.js -Raw | kubectl run k6 --rm -i --restart=Never --image=grafana/k6 -- run -   # terminal 3: load
+```
+Quick alternative to k6: `kubectl run load --rm -it --restart=Never --image=williamyeh/hey -- -z 3m -c 50 http://customer-api/customers`.
+
+Notes:
+- Generate the load from inside the cluster. `kubectl port-forward` sends every request to a single pod.
+- New pods receive traffic only after the readiness probe passes, and scale-down waits about 5 minutes after the load stops.
 
 ## Reference
 
@@ -112,46 +146,6 @@ Notes:
 | GET | `/health` | Readiness: checks the API and database connectivity |
 | GET | `/health/live` | Liveness: the process is up (no dependency checks) |
 | GET | `/openapi/v1.json` | OpenAPI document (Development only) |
-
-### Configuration
-
-| Variable | Used by | Purpose |
-|----------|---------|---------|
-| `POSTGRES_USER` | postgres, api | Database user |
-| `POSTGRES_PASSWORD` | postgres, api | Database password |
-| `ConnectionStrings__Customers` | api | Connection string. Built in `docker-compose.yml` for the container (host `postgres`), or set via user secrets locally |
-| `ASPNETCORE_ENVIRONMENT` | api | Swagger/OpenAPI are enabled only in `Development` |
-
-### Helm values
-
-Defaults are in [cicd/charts/customer-api/values.yaml](cicd/charts/customer-api/values.yaml).
-
-| Value | Default | Purpose |
-|-------|---------|---------|
-| `replicaCount` | `2` | API pods |
-| `image.repository` / `image.tag` | `customer-api` / `latest` | Image to run |
-| `resources` | 100m CPU / 128Mi requested, 256Mi memory limit | API container resources |
-| `config.aspnetcoreEnvironment` | `Production` | Stored in a ConfigMap and exposed as `ASPNETCORE_ENVIRONMENT` |
-| `database.existingSecret` | `customer-api-db` | Pre-created Secret with the DB user and password |
-| `database.host` / `port` / `name` | `postgres` / `5432` / `customerdb` | Used to build `ConnectionStrings__Customers` |
-| `postgresql.*` | see file | Settings for the Bitnami PostgreSQL dependency |
-
-The probes use `/health` (readiness) and `/health/live` (liveness).
-
-### Project layout
-```
-src/
-  CustomerApi/                 API host: endpoints, health checks, error handling
-  CustomerApi.Application/     Services, DTOs, mappers, repository interfaces
-  CustomerApi.Domain/          Entities
-  CustomerApi.Infrastructure/  EF Core DbContext, repositories, migrations
-tests/                         Unit and integration tests
-cicd/Dockerfile                Multi-stage image build
-cicd/charts/customer-api/      Helm chart (API + Bitnami PostgreSQL dependency)
-cicd/kubernetes/               Plain manifests written first as a learning step (reference only)
-db/init.sql                    Schema script generated from the EF migrations
-scripts/                       EF migration helpers and the image build script
-```
 
 ### Database schema in Docker
 `db/init.sql` runs only when the Postgres volume is empty. After adding a migration, regenerate it and reset the volume:
