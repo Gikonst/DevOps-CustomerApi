@@ -8,7 +8,7 @@ on:
 
 jobs:
   helm:
-    name: Lint and package
+    name: Lint & Package
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
