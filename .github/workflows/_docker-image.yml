@@ -8,6 +8,9 @@ on:
       dockerfile:
         type: string
         default: infrastructure/Dockerfile
+      target:
+        type: string
+        default: final
     outputs:
       image:
         value: ${{ jobs.image.outputs.image }}
@@ -39,3 +42,4 @@ jobs:
           file: ${{ inputs.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags}}
+          target: ${{ inputs.target }}

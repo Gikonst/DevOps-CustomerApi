@@ -19,7 +19,17 @@ jobs:
       packages: write
     with:
       image-name: customer-api
-  
+
+  migrations-image:
+    needs: build-test
+    uses: ./.github/workflows/_docker-image.yml
+    permissions: 
+      contents: read
+      packages: write
+    with:
+      image-name: customer-api-migrations
+      target: migrations
+      
   helm:
     needs: build-test
     uses: ./.github/workflows/_helm-chart.yml

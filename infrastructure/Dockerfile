@@ -14,6 +14,21 @@ RUN dotnet restore src/CustomerApi/CustomerApi.csproj
 COPY src/ src/
 RUN dotnet publish src/CustomerApi/CustomerApi.csproj -c Release -o /app --no-restore
 
+# Migrations bundle
+FROM build AS migrations-build
+COPY dotnet-tools.json ./
+RUN dotnet tool restore
+# Program.cs requires a connection string at startup; the bundle never connects with this one
+RUN ConnectionStrings__Customers="Host=unused" dotnet dotnet-ef migrations bundle \
+    --project src/CustomerApi.Infrastructure --startup-project src/CustomerApi \
+    --self-contained -r linux-x64 -o /migrations/efbundle
+
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0 AS migrations
+WORKDIR /migrations
+COPY --from=migrations-build /migrations/efbundle .
+USER $APP_UID
+ENTRYPOINT ["./efbundle"]
+
 # Stage 2: runtime
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
