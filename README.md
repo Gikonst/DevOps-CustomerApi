@@ -103,6 +103,7 @@ Notes:
 - Rebuilding the image under the same tag does not restart the pods. Run `kubectl rollout restart deployment/customer-api`, or use a new tag (`-Tag 0.1.1` and `image.tag`).
 - Every key in `.env` becomes a key in the Secret. The chart only reads `POSTGRES_USER` and `POSTGRES_PASSWORD`.
 - Migrations are not applied automatically on deploy yet.
+- `docker compose` and `kubectl port-forward` both default to `localhost:8080`. Stop one of them or pick another local port (for example `8081:80`).
 
 ## Scale it
 
@@ -132,6 +133,45 @@ Notes:
 - Generate the load from inside the cluster. `kubectl port-forward` sends every request to a single pod.
 - New pods receive traffic only after the readiness probe passes, and scale-down waits about 5 minutes after the load stops.
 
+## Monitoring (Prometheus + Grafana)
+
+**1. Install the stack**
+```powershell
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+helm install monitoring prometheus-community/kube-prometheus-stack -n monitoring --create-namespace
+kubectl get pods -n monitoring -w
+```
+
+**2. Deploy the instrumented API.** It exposes `/metrics`, and the chart creates a ServiceMonitor labelled `release: monitoring` so Prometheus scrapes it:
+```powershell
+./scripts/build-image.ps1 -Tag 0.2.0
+helm upgrade customer-api ./cicd/charts/customer-api --reset-values --set image.tag=0.2.0
+kubectl port-forward svc/monitoring-kube-prometheus-prometheus 9090:9090 -n monitoring    # http://localhost:9090/targets: customer-api should be UP
+```
+
+**3. Open Grafana** (user `admin`):
+```powershell
+kubectl port-forward svc/monitoring-grafana 3000:80 -n monitoring                        # http://localhost:3000
+$p = kubectl get secret monitoring-grafana -n monitoring -o jsonpath="{.data.admin-password}"
+[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($p))
+```
+
+**4. Import the dashboards** from [cicd/grafana/dashboards](cicd/grafana/dashboards) if you haven't done so yet. In Grafana go to **Dashboards > New > Import**, upload one JSON file (or drop all six one after the other) and choose the **Prometheus** data source if asked. There is one dashboard per file:
+
+| File | Shows |
+|------|-------|
+| `Request rate.json` | Requests per second, health probes excluded |
+| `Error rate.json` | Share of 5xx responses |
+| `Latency (p95).json` | 95th percentile request duration |
+| `Replicas.json` | Running API pods |
+| `Pod CPU.json` | CPU per API pod |
+| `Pod memory.json` | Memory per API pod |
+
+Run the k6 load from the previous section and watch CPU, latency and replicas move together.
+
+Note: the health probes dominate idle traffic, which is why the queries exclude `/health*`.
+
 ## Reference
 
 ### Endpoints
@@ -145,6 +185,7 @@ Notes:
 | DELETE | `/customers/{customerId}` | Delete a customer |
 | GET | `/health` | Readiness: checks the API and database connectivity |
 | GET | `/health/live` | Liveness: the process is up (no dependency checks) |
+| GET | `/metrics` | Prometheus metrics (request count and duration, process and .NET runtime) |
 | GET | `/openapi/v1.json` | OpenAPI document (Development only) |
 
 ### Database schema in Docker
