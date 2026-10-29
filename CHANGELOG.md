@@ -2,6 +2,28 @@
 
 What was added in each phase of the roadmap (see [README.md](README.md)). Newest first.
 
+## Phase 8 — CI/CD and database migrations
+
+### Added
+- `.github/workflows/ci.yml`: build and test on every pull request to `master`.
+- `.github/workflows/cicd.yml`: on every push to `master` (or by hand), build and test, then build and push the API and migrations images to GHCR (tag `sha-<commit>`) and lint, render and package the Helm chart as a build artifact.
+- Reusable workflow templates: `_build-test.yml`, `_docker-image.yml` (inputs `image-name`, `dockerfile`, `target`) and `_helm-chart.yml`.
+- `migrations` target in the Dockerfile: a self-contained EF Core migrations bundle (`efbundle`) on the small `runtime-deps` image, running as non-root.
+- Chart: `templates/migration-job.yaml` and `migrations` values. A Job runs as a Helm hook (`post-install`, `pre-upgrade`), waits for Postgres, and applies pending migrations with the same Secret as the API. The image tag defaults to `image.tag`.
+- `scripts/build-image.ps1` builds and loads the API and migrations images with the same tag.
+
+### Changed
+- Renamed `cicd/` to `infrastructure/` (Dockerfile, chart, Grafana dashboards, load test, plain manifests).
+- Migrations no longer need the manual port-forward and `update-database.ps1` on Kubernetes.
+
+### Notes
+- Verified in a separate namespace on an empty database: the Job completed and the API pods became `1/1` without any manual step.
+- The hook is `post-install` rather than `pre-install` because Postgres is part of the same release and does not exist before the install.
+- `helm install` and `helm upgrade` wait for the Job (5 minutes by default). A missing migrations image leaves it in `ImagePullBackOff` until Helm times out.
+- A rollback does not undo migrations, so they must stay backward compatible.
+- CD stops at publishing images and the chart. GitHub's runners cannot reach minikube, so deployment is planned with Argo CD.
+- GitHub Actions workflows are specific to GitHub. Azure DevOps or GitLab would need their own pipeline files.
+
 ## Phase 7 — Monitoring with Grafana
 
 ### Added

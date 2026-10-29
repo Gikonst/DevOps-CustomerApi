@@ -63,3 +63,9 @@ autoscaling:
 serviceMonitor:
   enabled: true
   release: monitoring
+
+migrations:
+  enabled: true
+  image:
+    repository: customer-api-migrations
+    tag: ""
