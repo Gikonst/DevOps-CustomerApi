@@ -59,3 +59,7 @@ autoscaling:
   minReplicas: 2
   maxReplicas: 6
   targetCPUUtilizationPercentage: 50
+
+serviceMonitor:
+  enabled: true
+  release: monitoring
