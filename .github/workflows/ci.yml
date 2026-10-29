@@ -8,4 +8,5 @@ permissions:
 
 jobs:
   build-test:
+    name: .NET
     uses: ./.github/workflows/_build-test.yml

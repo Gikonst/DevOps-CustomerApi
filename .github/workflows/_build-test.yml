@@ -8,12 +8,18 @@ on:
 
 jobs:
   build-test:
+    name: Build and test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
-      - run: dotnet restore CustomerApi.slnx
-      - run: dotnet build CustomerApi.slnx -c Release --no-restore
-      - run: dotnet test CustomerApi.slnx -c Release --no-build
+      - name: Restore
+        run: dotnet restore CustomerApi.slnx
+      - name: Build
+        run: dotnet build CustomerApi.slnx -c Release --no-restore
+      - name: Test
+        run: dotnet test CustomerApi.slnx -c Release --no-build

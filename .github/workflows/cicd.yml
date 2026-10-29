@@ -1,4 +1,4 @@
-name: CICD
+name: CI/CD
 on:
   push:
     branches: [master]
@@ -9,9 +9,11 @@ permissions:
 
 jobs:
   build-test:
+    name: .NET
     uses: ./.github/workflows/_build-test.yml
   
   image:
+    name: API image
     needs: build-test
     uses: ./.github/workflows/_docker-image.yml
     permissions: 
@@ -21,6 +23,7 @@ jobs:
       image-name: customer-api
 
   migrations-image:
+    name: Migrations image
     needs: build-test
     uses: ./.github/workflows/_docker-image.yml
     permissions: 
@@ -31,5 +34,6 @@ jobs:
       target: migrations
       
   helm:
+    name: Helm chart
     needs: build-test
     uses: ./.github/workflows/_helm-chart.yml
