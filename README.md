@@ -15,6 +15,7 @@ What was added in each phase is listed in [CHANGELOG.md](CHANGELOG.md).
 | 5 | Deploy with Helm (install, port-forward, upgrade & rollback) |
 | 6 | Scale it (manual scaling, metrics-server, HPA, load testing with k6/hey) |
 | 7 | Monitoring with Grafana (kube-prometheus-stack, app metrics, dashboards) |
+| 8 | CI/CD with GitHub Actions (build and test on PRs, images and chart on `master`) and automatic database migrations |
 
 ## Prerequisites
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
@@ -56,53 +57,43 @@ Run from the repository root in PowerShell, with Docker Desktop running. `.env` 
 **1. Cluster, image and credentials**
 ```powershell
 minikube start --driver=docker
-./scripts/build-image.ps1                                              # builds customer-api:latest and loads it into minikube
+./scripts/build-image.ps1                                              # builds customer-api and customer-api-migrations (tag latest) and loads both into minikube
 kubectl create secret generic customer-api-db --from-env-file=.env     # DB credentials live in the cluster, not in the chart
 ```
 
 **2. Install the chart**
 ```powershell
-helm dependency update ./cicd/charts/customer-api      # first time only: downloads the PostgreSQL chart
-helm install customer-api ./cicd/charts/customer-api
-kubectl get pods -w
+helm dependency update ./infrastructure/charts/customer-api      # first time only: downloads the PostgreSQL chart
+helm install customer-api ./infrastructure/charts/customer-api --timeout 10m
+kubectl get jobs,pods -w
 ```
-The API pods stay `0/1` until the schema exists, because `/health` queries the `Customers` table.
+A migration Job runs after the install and before every upgrade. It waits for Postgres and applies any pending EF Core migrations, so an empty database gets the `Customers` table. The API pods stay `0/1` until it has finished, because `/health` queries that table. Check it with `kubectl logs job/customer-api-migrations -c migrations`.
 
-**3. Apply the migrations through a tunnel**
-```powershell
-kubectl port-forward svc/postgres 5433:5432            # terminal 1, leave it running
-```
-```powershell
-$e = (Get-Content .env -Raw) | ConvertFrom-StringData  # terminal 2
-$env:ConnectionStrings__Customers = "Host=localhost;Port=5433;Database=customerdb;Username=$($e.POSTGRES_USER);Password=$($e.POSTGRES_PASSWORD)"
-./scripts/update-database.ps1
-```
-
-**4. Try it**
+**3. Try it**
 ```powershell
 kubectl port-forward svc/customer-api 8080:80
 curl http://localhost:8080/health
 ```
 
-**5. Upgrade and roll back**
+**4. Upgrade and roll back**
 ```powershell
 ./scripts/build-image.ps1 -Tag 0.1.1                   # new image version
-helm upgrade customer-api ./cicd/charts/customer-api --reset-values --set image.tag=0.1.1
+helm upgrade customer-api ./infrastructure/charts/customer-api --reset-values --set image.tag=0.1.1
 helm history customer-api
 helm rollback customer-api <revision>
 ```
-`--reset-values` uses the chart defaults plus only the values you pass, instead of reusing values from earlier revisions. Check what a release uses with `helm get values customer-api`. A rollback restores the Kubernetes resources only, not the database.
+`--reset-values` uses the chart defaults plus only the values you pass, instead of reusing values from earlier revisions. Check what a release uses with `helm get values customer-api`. A rollback restores the Kubernetes resources only, not the database, so keep migrations backward compatible.
 
 **Clean up**
 ```powershell
 helm uninstall customer-api
 ```
-`helm uninstall` keeps the `data-postgres-0` volume claim and the `customer-api-db` Secret. Delete them with `kubectl delete pvc data-postgres-0` and `kubectl delete secret customer-api-db` for a clean slate.
+`helm uninstall` keeps the `data-postgres-0` volume claim, the `customer-api-db` Secret and the last migration Job. Delete them with `kubectl delete pvc data-postgres-0`, `kubectl delete secret customer-api-db` and `kubectl delete job customer-api-migrations` for a clean slate.
 
 Notes:
 - Rebuilding the image under the same tag does not restart the pods. Run `kubectl rollout restart deployment/customer-api`, or use a new tag (`-Tag 0.1.1` and `image.tag`).
 - Every key in `.env` becomes a key in the Secret. The chart only reads `POSTGRES_USER` and `POSTGRES_PASSWORD`.
-- Migrations are not applied automatically on deploy yet.
+- The migration image must exist with the same tag as the API image, otherwise the Job fails with `ImagePullBackOff`. `build-image.ps1` builds both.
 - `docker compose` and `kubectl port-forward` both default to `localhost:8080`. Stop one of them or pick another local port (for example `8081:80`).
 
 ## Scale it
@@ -116,16 +107,16 @@ kubectl top pods
 
 **2. Manual scaling.** Turn the autoscaler off, otherwise it controls the replica count:
 ```powershell
-helm upgrade customer-api ./cicd/charts/customer-api --reset-values --set autoscaling.enabled=false --set replicaCount=4
+helm upgrade customer-api ./infrastructure/charts/customer-api --reset-values --set autoscaling.enabled=false --set replicaCount=4
 kubectl get endpoints customer-api
 ```
 
 **3. Autoscaling.** The chart creates a CPU-based HPA by default (2 to 6 pods, 50% of the CPU request):
 ```powershell
-helm upgrade customer-api ./cicd/charts/customer-api --reset-values
+helm upgrade customer-api ./infrastructure/charts/customer-api --reset-values
 kubectl get hpa -w                                     # terminal 1
 kubectl get pods -w                                    # terminal 2
-Get-Content cicd/tests/load/customers.js -Raw | kubectl run k6 --rm -i --restart=Never --image=grafana/k6 -- run -   # terminal 3: load
+Get-Content infrastructure/tests/load/customers.js -Raw | kubectl run k6 --rm -i --restart=Never --image=grafana/k6 -- run -   # terminal 3: load
 ```
 Quick alternative to k6: `kubectl run load --rm -it --restart=Never --image=williamyeh/hey -- -z 3m -c 50 http://customer-api/customers`.
 
@@ -146,7 +137,7 @@ kubectl get pods -n monitoring -w
 **2. Deploy the instrumented API.** It exposes `/metrics`, and the chart creates a ServiceMonitor labelled `release: monitoring` so Prometheus scrapes it:
 ```powershell
 ./scripts/build-image.ps1 -Tag 0.2.0
-helm upgrade customer-api ./cicd/charts/customer-api --reset-values --set image.tag=0.2.0
+helm upgrade customer-api ./infrastructure/charts/customer-api --reset-values --set image.tag=0.2.0
 kubectl port-forward svc/monitoring-kube-prometheus-prometheus 9090:9090 -n monitoring    # http://localhost:9090/targets: customer-api should be UP
 ```
 
@@ -157,7 +148,7 @@ $p = kubectl get secret monitoring-grafana -n monitoring -o jsonpath="{.data.adm
 [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($p))
 ```
 
-**4. Import the dashboards** from [cicd/grafana/dashboards](cicd/grafana/dashboards) if you haven't done so yet. In Grafana go to **Dashboards > New > Import**, upload one JSON file (or drop all six one after the other) and choose the **Prometheus** data source if asked. There is one dashboard per file:
+**4. Import the dashboards** from [infrastructure/grafana/dashboards](infrastructure/grafana/dashboards) if you haven't done so yet. In Grafana go to **Dashboards > New > Import**, upload one JSON file (or drop all six one after the other) and choose the **Prometheus** data source if asked. There is one dashboard per file:
 
 | File | Shows |
 |------|-------|
@@ -171,6 +162,19 @@ $p = kubectl get secret monitoring-grafana -n monitoring -o jsonpath="{.data.adm
 Run the k6 load from the previous section and watch CPU, latency and replicas move together.
 
 Note: the health probes dominate idle traffic, which is why the queries exclude `/health*`.
+
+## CI/CD (GitHub Actions)
+
+| Workflow | Runs on | Does |
+|----------|---------|------|
+| `ci.yml` | Pull requests to `master` | Build and test |
+| `cicd.yml` | Push to `master` (a merge), or **Run workflow** in the Actions tab | Build and test, push `customer-api` and `customer-api-migrations` to GHCR tagged `sha-<commit>`, then lint, render and package the Helm chart |
+
+Both call reusable templates in `.github/workflows`: `_build-test.yml`, `_docker-image.yml` and `_helm-chart.yml`.
+
+Notes:
+- After the first run, set both GHCR packages to public so the cluster can pull them without credentials.
+- There is no deploy step yet. GitHub's runners cannot reach a local minikube, so deployment will be pulled into the cluster with Argo CD.
 
 ## Reference
 
