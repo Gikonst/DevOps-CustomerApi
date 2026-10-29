@@ -1,0 +1,25 @@
+name: CICD
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    uses: ./.github/workflows/_build-test.yml
+  
+  image:
+    needs: build-test
+    uses: ./.github/workflows/_docker-image.yml
+    permissions: 
+      contents: read
+      packages: write
+    with:
+      image-name: customer-api
+  
+  helm:
+    needs: build-test
+    uses: ./.github/workflows/_helm-chart.yml

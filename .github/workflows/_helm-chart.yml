@@ -1,0 +1,22 @@
+name: helm-chart
+on:
+  workflow_call:
+    inputs:
+      chart-path:
+        type: string
+        default: infrastructure/charts/customer-api
+
+jobs:
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm dependency build ${{ inputs.chart-path}}
+      - run: helm lint ${{ inputs.chart-path }}
+      - run: helm template customer-api ${{ inputs.chart-path }}
+      - run: helm package ${{ inputs.chart-path }} -d dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helm-chart
+          path: dist/*.tgz
