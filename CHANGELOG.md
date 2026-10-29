@@ -2,6 +2,22 @@
 
 What was added in each phase of the roadmap (see [README.md](README.md)). Newest first.
 
+## Phase 7 — Monitoring with Grafana
+
+### Added
+- kube-prometheus-stack (release `monitoring`, namespace `monitoring`): Prometheus, Grafana, Alertmanager, kube-state-metrics and node-exporter.
+- `/metrics` endpoint in the API with prometheus-net (`UseHttpMetrics`, `MapMetrics`): request count, duration histogram, in-progress requests, and process and .NET runtime metrics.
+- Chart: `templates/servicemonitor.yaml` with `serviceMonitor` values (`enabled`, `release`), and a named `http` port on the Service, which the ServiceMonitor refers to.
+- Grafana dashboards exported to `cicd/grafana/dashboards` (one JSON file each, to import in Grafana): request rate, error rate, p95 latency, replicas, pod CPU and pod memory.
+
+### Notes
+- The ServiceMonitor must carry `release: monitoring`, otherwise Prometheus ignores it.
+- `interval` is a string with a unit (`15s`). A bare number is rejected by the API server.
+- Health probes dominate idle traffic, so the queries exclude `/health*`.
+- Verified during a k6 load: pod CPU rose and the HPA scaled from 2 to 6 replicas on the dashboard.
+- `/metrics` is served on the API port, so anything that can reach the Service can read it.
+- The dashboards are not provisioned automatically. They have to be imported by hand in Grafana.
+
 ## Phase 6 — Scale it
 
 ### Added

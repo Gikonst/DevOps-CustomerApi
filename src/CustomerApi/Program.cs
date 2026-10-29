@@ -7,6 +7,7 @@ using CustomerApi.Health;
 using CustomerApi.Infrastructure.Persistence;
 using CustomerApi.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Prometheus;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +32,7 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseHttpMetrics();
 
 if (app.Environment.IsDevelopment())
 {
@@ -46,6 +48,7 @@ app.UseHttpsRedirection();
 app.MapCustomerEndpoints();
 app.MapHealthChecks("/health");
 app.MapHealthChecks("/health/live", new() { Predicate = _ => false });
+app.MapMetrics();
 
 app.Run();
 
