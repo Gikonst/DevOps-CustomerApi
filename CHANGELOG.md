@@ -2,6 +2,20 @@
 
 What was added in each phase of the roadmap (see [README.md](README.md)). Newest first.
 
+## Phase 9 — Centralized logging with Loki
+
+### Added
+- Loki (release `loki`, namespace `logging`) in SingleBinary mode with filesystem storage, configured in `infrastructure/logging/loki-values.yml`. Caches, canary and test pods are disabled.
+- Grafana Alloy (release `alloy`, namespace `logging`) configured in `infrastructure/logging/alloy-values.yml`: discovers all pods, adds the `namespace`, `pod`, `container` and `app` labels, reads their logs through the Kubernetes API and pushes them to the Loki gateway.
+- Loki data source in Grafana (`http://loki-gateway.logging.svc`), added through the UI.
+
+### Notes
+- Verified: `{app="customer-api"}` returns the API logs from all pods in Grafana Explore.
+- Loki indexes labels only. The log text is scanned at query time, so labels must stay low-variety.
+- Promtail is deprecated, so Alloy is used as the collector.
+- The API still writes plain-text logs. Switching to JSON logs would allow filtering by fields such as the log level.
+- The data source is not stored as code, so it has to be added again after reinstalling Grafana.
+
 ## Phase 8 — CI/CD and database migrations
 
 ### Added
