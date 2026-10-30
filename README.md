@@ -16,6 +16,7 @@ What was added in each phase is listed in [CHANGELOG.md](CHANGELOG.md).
 | 6 | Scale it (manual scaling, metrics-server, HPA, load testing with k6/hey) |
 | 7 | Monitoring with Grafana (kube-prometheus-stack, app metrics, dashboards) |
 | 8 | CI/CD with GitHub Actions (build and test on PRs, images and chart on `master`) and automatic database migrations |
+| 9 | Centralized logging with Loki (Grafana Alloy collects pod logs, LogQL in Grafana) |
 
 ## Prerequisites
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
@@ -162,6 +163,34 @@ $p = kubectl get secret monitoring-grafana -n monitoring -o jsonpath="{.data.adm
 Run the k6 load from the previous section and watch CPU, latency and replicas move together.
 
 Note: the health probes dominate idle traffic, which is why the queries exclude `/health*`.
+
+## Centralized logging (Loki)
+
+Grafana Alloy reads every pod's stdout through the Kubernetes API, labels each line with `namespace`, `pod`, `container` and `app`, and pushes it to Loki. Grafana queries Loki with LogQL.
+
+**1. Install Loki and Alloy**
+```powershell
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
+helm install loki grafana/loki -n logging --create-namespace -f infrastructure/logging/loki-values.yml
+helm install alloy grafana/alloy -n logging -f infrastructure/logging/alloy-values.yml
+kubectl get pods -n logging -w
+```
+Loki runs as a single pod with local storage. The Alloy pipeline is in [infrastructure/logging/alloy-values.yml](infrastructure/logging/alloy-values.yml).
+
+**2. Add Loki to Grafana.** In **Connections > Data sources > Add data source > Loki**, set the URL to `http://loki-gateway.logging.svc` and click **Save & test**.
+
+**3. Query in Explore** (data source Loki):
+
+| Query | Shows |
+|-------|-------|
+| `{app="customer-api"}` | All API logs from every pod |
+| `{app="customer-api"} \|= "fail"` | Lines that contain "fail" |
+| `sum by (pod) (count_over_time({app="customer-api"}[1m]))` | Log lines per minute per pod |
+
+Notes:
+- Loki indexes only the labels, not the log text. Keep labels few and low-variety (never IDs).
+- The API logs warnings and above by default, so it is quiet until something happens or a pod restarts.
 
 ## CI/CD (GitHub Actions)
 
