@@ -2,6 +2,27 @@
 
 What was added in each phase of the roadmap (see [README.md](README.md)). Newest first.
 
+## Phase 10 — GitOps with Argo CD
+
+### Added
+- Argo CD (release `argocd`, namespace `argocd`), installed from its Helm chart.
+- `infrastructure/argocd/customer-api-dev.yaml`: an Argo CD Application that deploys the chart from `master` to the `dev` namespace, with automated sync, `prune` and `selfHeal`.
+- `values-dev.yaml`: GHCR image repositories, the image tag to deploy, and `migrations.argocd: true`.
+- Sync waves: Postgres (0), migration Job as an Argo CD `Sync` hook (1), API Deployment (2), HPA (3).
+- `_bump-tag.yml` and a `Deploy to dev` job in `cicd.yml`: after the images are pushed, CI/CD commits `sha-<commit>` to `values-dev.yaml`, which Argo CD then deploys.
+- `concurrency` on `cicd.yml`, so runs on `master` wait for each other.
+
+### Changed
+- The migration Job uses Helm hooks or Argo CD hooks depending on `migrations.argocd`.
+- The Bitnami PostgreSQL chart (`.tgz`) is committed, so Argo CD renders the chart without downloading dependencies. The stale `cicd/` ignore rule was removed.
+
+### Notes
+- Verified: the first sync created Postgres, ran the migrations and brought the API and HPA to Healthy in `dev`.
+- The HPA first sat in wave 0 and waited for a Deployment that only exists in wave 2, which blocked the sync. Moving it to wave 3 fixed it.
+- The `customer-api-db` Secret is created by hand in each namespace and is not managed by Argo CD.
+- The tag commit uses the workflow token, which does not trigger another run. If `master` requires pull requests, the bot needs a bypass, otherwise the push is rejected.
+- Rolling back means reverting the tag commit. The database is not rolled back.
+
 ## Phase 9 — Centralized logging with Loki
 
 ### Added

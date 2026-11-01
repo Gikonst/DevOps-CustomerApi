@@ -7,6 +7,11 @@ on:
 permissions:
   contents: read
 
+# Runs one after another so tag bumps from quick merges don't collide
+concurrency:
+  group: cicd-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-test:
     name: .NET
@@ -37,3 +42,13 @@ jobs:
     name: Helm chart
     needs: build-test
     uses: ./.github/workflows/_helm-chart.yml
+
+  deploy-dev:
+    name: Deploy to dev
+    needs: [image, migrations-image, helm]
+    uses: ./.github/workflows/_bump-tag.yml
+    permissions:
+      contents: write
+    with:
+      values-file: infrastructure/charts/customer-api/values-dev.yaml
+      tag: sha-${{ github.sha }}
