@@ -17,6 +17,7 @@ What was added in each phase is listed in [CHANGELOG.md](CHANGELOG.md).
 | 7 | Monitoring with Grafana (kube-prometheus-stack, app metrics, dashboards) |
 | 8 | CI/CD with GitHub Actions (build and test on PRs, images and chart on `master`) and automatic database migrations |
 | 9 | Centralized logging with Loki (Grafana Alloy collects pod logs, LogQL in Grafana) |
+| 10 | GitOps with Argo CD (deploys the chart to `dev` from git, automatic image tag bump from CI/CD) |
 
 ## Prerequisites
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
@@ -197,13 +198,44 @@ Notes:
 | Workflow | Runs on | Does |
 |----------|---------|------|
 | `ci.yml` | Pull requests to `master` | Build and test |
-| `cicd.yml` | Push to `master` (a merge), or **Run workflow** in the Actions tab | Build and test, push `customer-api` and `customer-api-migrations` to GHCR tagged `sha-<commit>`, then lint, render and package the Helm chart |
+| `cicd.yml` | Push to `master` (a merge), or **Run workflow** in the Actions tab | Build and test, push `customer-api` and `customer-api-migrations` to GHCR tagged `sha-<commit>`, lint, render and package the Helm chart, then commit the new tag to `values-dev.yaml` |
 
-Both call reusable templates in `.github/workflows`: `_build-test.yml`, `_docker-image.yml` and `_helm-chart.yml`.
+Both call reusable templates in `.github/workflows`: `_build-test.yml`, `_docker-image.yml`, `_helm-chart.yml` and `_bump-tag.yml`.
 
 Notes:
 - After the first run, set both GHCR packages to public so the cluster can pull them without credentials.
-- There is no deploy step yet. GitHub's runners cannot reach a local minikube, so deployment will be pulled into the cluster with Argo CD.
+- The tag commit is pushed with the workflow's own token, which does not start another run.
+
+## GitOps (Argo CD)
+
+Argo CD runs in the cluster, watches `master` and keeps the `dev` namespace equal to the chart plus [values-dev.yaml](infrastructure/charts/customer-api/values-dev.yaml). Every merge to `master` builds new images, and CI/CD commits their tag to `values-dev.yaml`, so Argo CD deploys it.
+
+**1. Install Argo CD and open the UI** (user `admin`):
+```powershell
+helm repo add argo https://argoproj.github.io/argo-helm
+helm install argocd argo/argo-cd -n argocd --create-namespace
+kubectl port-forward svc/argocd-server -n argocd 8443:443        # https://localhost:8443
+$p = kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}"
+[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($p))
+```
+
+**2. Create the `dev` environment.** The Secret stays out of git, so create it once by hand:
+```powershell
+kubectl create namespace dev
+kubectl create secret generic customer-api-db --from-env-file=.env -n dev
+kubectl apply -f infrastructure/argocd/customer-api-dev.yaml
+kubectl get jobs,pods -n dev -w
+```
+Argo CD applies the chart in sync waves: Postgres, then the migration Job, then the API, then the HPA.
+
+**3. Deploy and roll back** by changing git, not the cluster:
+- Deploy: merge to `master`. CI/CD updates `image.tag` in `values-dev.yaml`, and Argo CD syncs within about 3 minutes (or click **Refresh**).
+- Roll back: revert the tag commit in git.
+
+Notes:
+- Don't run `helm` against `dev`. Argo CD reverts manual changes (`selfHeal`) and deletes resources removed from git (`prune`).
+- `values-dev.yaml` sets `migrations.argocd: true`, so the migration Job uses Argo CD sync waves instead of Helm hooks. Plain `helm install` keeps the Helm hooks.
+- The `default` namespace is still managed by hand with Helm and is not touched by Argo CD.
 
 ## Reference
 

@@ -1,0 +1,39 @@
+name: bump-tag
+on:
+  workflow_call:
+    inputs:
+      values-file:
+        type: string
+        required: true
+      tag:
+        type: string
+        required: true
+
+jobs:
+  bump:
+    name: Update image tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VALUES_FILE: ${{ inputs.values-file }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - name: Set image tag
+        run: yq -i '.image.tag = strenv(TAG)' "$VALUES_FILE"
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$VALUES_FILE"
+          if git diff --cached --quiet; then
+            echo "Tag already set, nothing to commit"
+            exit 0
+          fi
+          git commit -m "Deploy $TAG to dev [skip ci]"
+          git pull --rebase
+          git push
