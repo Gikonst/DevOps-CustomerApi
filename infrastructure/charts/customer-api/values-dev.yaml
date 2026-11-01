@@ -1,7 +1,6 @@
 image:
   repository: ghcr.io/gikonst/customer-api
-  tag: sha-809420035cd625df390d5ce4eaeb149ba044905e
-
+  tag: sha-1198a9794cc80e2fc02b703fa6f01f3367641d75
 migrations:
   argocd: true
   image:
