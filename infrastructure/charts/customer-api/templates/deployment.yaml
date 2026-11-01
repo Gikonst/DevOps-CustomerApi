@@ -4,6 +4,8 @@ metadata:
   name: {{ include "customer-api.fullname" . }}
   labels:
     {{- include "customer-api.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}

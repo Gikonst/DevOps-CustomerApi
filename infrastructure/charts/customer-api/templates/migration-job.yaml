@@ -6,8 +6,14 @@ metadata:
   labels:
     {{- include "customer-api.labels" . | nindent 4 }}
   annotations:
+    {{- if .Values.migrations.argocd }}
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    {{- else }}
     helm.sh/hook: post-install,pre-upgrade
     helm.sh/hook-delete-policy: before-hook-creation
+    {{- end }}
 spec:
   backoffLimit: 3
   activeDeadlineSeconds: 600

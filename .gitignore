@@ -50,6 +50,3 @@ session-state/
 
 # Secrets
 secrets.yaml
-
-# Helm chart dependencies
-cicd/charts/*/charts/*.tgz

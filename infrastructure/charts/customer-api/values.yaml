@@ -66,6 +66,7 @@ serviceMonitor:
 
 migrations:
   enabled: true
+  argocd: false
   image:
     repository: customer-api-migrations
     tag: ""
